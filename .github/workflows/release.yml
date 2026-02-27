@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Build plugin zip
+        run: ./gradlew clean bundlePlugin
+
+      - name: Rename zip with commit SHA
+        run: |
+          VERSION=$(grep '^version' gradle.properties | head -n1 | cut -d'=' -f2 | tr -d '[:space:]')
+          SHORT_SHA=$(echo "${GITHUB_SHA}" | cut -c1-7)
+          mv "build/distributions/prometheus-exporter-${VERSION}.zip" \
+             "build/distributions/prometheus-exporter-${VERSION}-${SHORT_SHA}.zip"
+
+      - name: Compute version
+        id: version
+        run: |
+          VERSION=$(grep '^version' gradle.properties | head -n1 | cut -d'=' -f2 | tr -d '[:space:]')
+          SHORT_SHA=$(echo "${GITHUB_SHA}" | cut -c1-7)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ steps.version.outputs.version }}+build.${{ github.run_number }}"
+          ZIP="build/distributions/prometheus-exporter-${{ steps.version.outputs.version }}-${{ steps.version.outputs.short_sha }}.zip"
+          gh release create "$TAG" "$ZIP" \
+            --title "$TAG" \
+            --notes "Automated release for $TAG" \
+            --target "${GITHUB_SHA}" \
+            --latest

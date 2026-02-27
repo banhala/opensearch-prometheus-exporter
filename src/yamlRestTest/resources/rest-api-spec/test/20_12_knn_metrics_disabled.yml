@@ -1,0 +1,81 @@
+# Test that disabling KNN metrics dynamically works.
+# Note: KNN plugin is NOT installed in the test cluster,
+# so KNN stats API returns 404 and KNN data metrics are not present.
+---
+"Dynamically disable KNN metrics":
+
+  # Let's start with just the default OOTB settings, this means
+  # both the persistent and transient settings levels are empty.
+  - do:
+      cluster.get_settings:
+        flat_settings: true
+
+  - match: {persistent: {}}
+  - match: {transient: {}}
+
+  # With default settings (prometheus.knn=true, but KNN plugin not installed),
+  # the endpoint should still work (HTTP 200).
+  - do:
+      prometheus.metrics: {}
+
+  - match:
+      $body: |
+        /.*
+        \# \s HELP \s opensearch_cluster_status (\s|\w|\d)+ \n
+        .*/
+
+  # -----------------------------------
+  # Disable the "prometheus.knn" at the TRANSIENT level:
+  - do:
+      cluster.put_settings:
+        body:
+          transient:
+            prometheus.knn: false
+        flat_settings: true
+
+  - is_false: transient.prometheus.knn
+
+  - do:
+      cluster.get_settings:
+        flat_settings: true
+
+  - is_false: transient.prometheus.knn
+  - match: {persistent: {}}
+
+  # Verify the endpoint still works with KNN disabled.
+  - do:
+      prometheus.metrics: {}
+
+  - match:
+      $body: |
+        /.*
+        \# \s HELP \s opensearch_cluster_status (\s|\w|\d)+ \n
+        .*/
+
+  # -----------------------------------
+  # Clear the "prometheus.knn" settings:
+  - do:
+      cluster.put_settings:
+        body:
+          transient:
+            prometheus.knn: null
+        flat_settings: true
+
+  # The endpoint should still work after re-enabling.
+  - do:
+      prometheus.metrics: {}
+
+  - match:
+      $body: |
+        /.*
+        \# \s HELP \s opensearch_cluster_status (\s|\w|\d)+ \n
+        .*/
+
+  # -----------------------------------
+  # Test clean up...
+  - do:
+      cluster.get_settings:
+        flat_settings: true
+
+  - match: {persistent: {}}
+  - match: {transient: {}}
